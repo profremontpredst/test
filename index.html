@@ -34,6 +34,17 @@
   </style>
 </head>
 <body>
+  <!-- overlay с кнопками -->
+  <div id="startOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;gap:20px;align-items:center;justify-content:center;z-index:9999;">
+    <button id="startWithPhoto" style="padding:20px 40px;font-size:18px;border:none;border-radius:8px;background:#ff6b6b;color:#fff;cursor:pointer;">
+      ▶ Начать с фото
+    </button>
+    <button id="startWithoutPhoto" style="padding:20px 40px;font-size:18px;border:none;border-radius:8px;background:#0a3d62;color:#fff;cursor:pointer;">
+      ▶ Начать без фото
+    </button>
+  </div>
+
+  <!-- чат -->
   <div class="chat-container">
     <div class="chat-header">Онлайн-консультант</div>
     <div class="chat-messages" id="chat"></div>
@@ -184,11 +195,45 @@
       recognition.onerror=()=>alert("Ошибка распознавания");
     }
 
-    // авто-приветствие №2 (без фото)
-    window.onload=()=>{
-      setTimeout(()=>{
-        appendMessage("Здравствуйте, надеюсь Вы не против аудиоформата... Для расчета по стоимости нужна ваша фотография. Пришлите фото, пожалуйста.",false);
-      },800);
+    // авто-приветствие — две кнопки
+    document.getElementById("startWithPhoto").onclick = async ()=>{
+      document.getElementById("startOverlay").style.display="none";
+      photoUploaded = true;
+      appendMessage("📷 Фото отправлено", true);
+      messages.push({role:"user", content:"[photo]"});
+
+      const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата. Отлично, что вы с фото! Для вашей фотографии подойдет стиль художественная живопись. Сейчас пришлю примеры работ.";
+      appendMessage(greeting,false);
+      playGreetingVoice(greeting);
+    };
+
+    document.getElementById("startWithoutPhoto").onclick = async ()=>{
+      document.getElementById("startOverlay").style.display="none";
+      photoUploaded = false;
+
+      const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата. Для расчета по стоимости нужна ваша фотография, чтобы подобрать стиль. Пришлите фото, пожалуйста.";
+      appendMessage(greeting,false);
+      playGreetingVoice(greeting);
+    };
+
+    async function playGreetingVoice(text){
+      try {
+        const ttsRes = await fetch(ELEVEN_URL,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ text })
+        });
+        const blob = await ttsRes.blob();
+        const audioUrl = URL.createObjectURL(blob);
+
+        const div = document.createElement("div");
+        div.className = "message bot";
+        div.innerHTML = `<audio controls autoplay src="${audioUrl}"></audio>`;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      } catch(err){
+        console.error("Ошибка авто-голоса:",err);
+      }
     }
   </script>
 </body>
