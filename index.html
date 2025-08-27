@@ -184,28 +184,9 @@
       recognition.onerror=()=>alert("Ошибка распознавания");
     }
 
-   // авто-приветствие №2 (без фото) — только голос
-window.onload = async ()=>{
-  setTimeout(async ()=>{
-    try {
-      const ttsRes = await fetch(ELEVEN_URL,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          text: "Здравствуйте, надеюсь Вы не против аудиоформата. Меня зовут Анна, я старший менеджер. Для расчета по стоимости нужна ваша фотография, чтобы подобрать стиль. Пришлите фото, пожалуйста."
-        })
-      });
-      const blob = await ttsRes.blob();
-      const audioUrl = URL.createObjectURL(blob);
-
-      const div = document.createElement("div");
-      div.className = "message bot";
-      div.innerHTML = `<audio controls autoplay src="${audioUrl}"></audio>`;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
-
-    } catch(err){
-      console.error("Ошибка авто-приветствия:", err);
-    }
+   // авто-приветствие №2 (без фото) — текстом
+window.onload = ()=>{
+  setTimeout(()=>{
+    appendMessage("Здравствуйте, надеюсь Вы не против аудиоформата. Для расчета по стоимости нужна ваша фотография. Пришлите фото, пожалуйста.", false);
   }, 800);
 }
