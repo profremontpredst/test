@@ -81,6 +81,7 @@
     let userId = localStorage.getItem("userId") || "user_" + Math.random().toString(36).substr(2,9);
     localStorage.setItem("userId", userId);
     let photoUploaded = false;
+    let hasGreeted = false;
 
     function appendMessage(text, fromUser=false){
       const div = document.createElement("div");
@@ -97,10 +98,11 @@
       messages.push({role:"user", content:text});
       chatInput.value="";
 
-      // ветка 3: сразу про цену без фото
-      if(messages.length === 1 && /сколько/i.test(text) && !photoUploaded){
-        const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата... С радостью сориентирую по стоимости, но нужна фотография, чтобы понять масштаб работы. Кого бы вы хотели изобразить на портрете?";
-        playGreetingVoice(greeting);
+      // если первым делом спросили цену без фото → голосом просим фото
+      if(messages.length === 1 && /сколько|цена|стоим|сколько стоит/i.test(text) && !photoUploaded){
+        const phrase = "Здравствуйте, надеюсь вы не против аудиоформата. Чтобы назвать цену, нужна фотография — пришлите, пожалуйста.";
+        playGreetingVoice(phrase);
+        hasGreeted = true;
         return;
       }
 
@@ -111,19 +113,19 @@
           body: JSON.stringify({ messages, userId, mode:"portraits" })
         });
         const data = await res.json();
-        let reply = data.choices?.[0]?.message?.content || "Ошибка";
-        
-        if(/\[openLeadForm\]/i.test(reply) || data.triggerForm){
-          reply = reply.replace(/\[openLeadForm\]/gi,"").trim();
+
+        let reply = data.choices?.[0]?.message?.content || "";
+
+        // форма — без текста
+        if (/\[openLeadForm\]/i.test(reply) || data.triggerForm) {
           openLeadForm();
+          reply = reply.replace(/\[openLeadForm\]/gi, "").trim();
         }
 
-        appendMessage(reply,false);
-        messages.push({role:"assistant", content:reply});
-
-        if(data.voice?.text){
-          playVoice(data.voice.text);
-        }
+        // ВСЕГДА ГОЛОС, без текста от бота
+        const spoken = (data.voice?.text && data.voice.text.trim()) || reply || "Продолжим.";
+        playVoice(spoken);
+        messages.push({ role: "assistant", content: `[voice_only] ${spoken}` });
 
       } catch(e){
         appendMessage("Ошибка соединения",false);
@@ -135,8 +137,12 @@
       appendMessage("📷 Фото отправлено", true);
       messages.push({role:"user", content:"[photo]"});
 
-      const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата... Для вашей фотографии отлично подойдет стиль художественная живопись. Сейчас пришлю примеры работ.";
-      playGreetingVoice(greeting);
+      // подтверждаем только голосом; не «перездороваемся»
+      const phrase = hasGreeted
+        ? "Спасибо, фото получил. Для вашей фотографии подойдет стиль художественная живопись. Сейчас пришлю примеры работ."
+        : "Здравствуйте, надеюсь Вы не против аудиоформата. Для вашей фотографии отлично подойдет стиль художественная живопись. Сейчас пришлю примеры работ.";
+      playGreetingVoice(phrase);
+      hasGreeted = true;
     }
 
     async function playVoice(text){
@@ -206,7 +212,8 @@
       messages.push({role:"user", content:"[photo]"});
 
       const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата. Отлично, что вы с фото! Для вашей фотографии подойдет стиль художественная живопись. Сейчас пришлю примеры работ.";
-      playGreetingVoice(greeting);
+      playGreetingVoice(greeting);  // только голос
+      hasGreeted = true;
     };
 
     document.getElementById("startWithoutPhoto").onclick = async ()=>{
@@ -214,7 +221,8 @@
       photoUploaded = false;
 
       const greeting = "Здравствуйте, надеюсь Вы не против аудиоформата. Для расчета по стоимости нужна ваша фотография, чтобы подобрать стиль. Пришлите фото, пожалуйста.";
-      playGreetingVoice(greeting);
+      playGreetingVoice(greeting);  // только голос
+      hasGreeted = true;
     };
 
     async function playGreetingVoice(text){
