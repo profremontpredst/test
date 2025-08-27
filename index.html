@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Онлайн-консультант</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial, sans-serif; background:#f5f6fa; margin:0; padding:0; }
+    .chat-container {
+      max-width: 500px; margin:40px auto; background:#fff; border-radius:12px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.1); display:flex; flex-direction:column; height:600px; overflow:hidden;
+    }
+    .chat-header { background:#0a3d62; color:#fff; padding:15px; text-align:center; font-weight:bold; }
+    .chat-messages { flex:1; padding:15px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; background:#f9f9fb; }
+    .message { max-width:80%; padding:10px 14px; border-radius:12px; font-size:14px; line-height:1.4; }
+    .bot { background:#eef4f9; align-self:flex-start; }
+    .user { background:#ff6b6b; color:#fff; align-self:flex-end; }
+    .chat-input { display:flex; border-top:1px solid #ddd; }
+    .chat-input input { flex:1; padding:12px; border:none; outline:none; font-size:14px; }
+    .chat-input button { padding:0 15px; border:none; background:#ff6b6b; color:#fff; font-weight:bold; cursor:pointer; display:flex; align-items:center; }
+    .chat-input button:hover { background:#ff4b4b; }
+    .chat-input button svg { width:18px; height:18px; fill:#fff; }
+    audio { margin-top:5px; }
+    #leadOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9998; }
+    #leadPopup, #leadThanks {
+      display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:#fff; padding:20px; border-radius:12px; z-index:9999; width:90%; max-width:350px;
+      box-shadow:0 0 20px rgba(0,0,0,0.3); text-align:center;
+    }
+    #leadPopup h3 { margin-bottom:10px; }
+    #leadPopup input { width:100%; padding:10px; margin:8px 0; border:1px solid #ccc; border-radius:8px; }
+    #leadPopup button { width:100%; padding:12px; border:none; background:#ff6b6b; color:#fff; font-weight:bold; border-radius:8px; cursor:pointer; }
+    #leadPopup button:hover { background:#ff4b4b; }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">Онлайн-консультант</div>
+    <div class="chat-messages" id="chat"></div>
+    <div class="chat-input">
+      <button onclick="sendPhoto()">📷</button>
+      <input type="text" id="chatInput" placeholder="Введите сообщение...">
+      <button onclick="sendMessage()">Отправить</button>
+      <button onclick="startVoice()" title="Говорить">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512">
+          <path d="M192 256c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32s32 14.3 32 32V256zM160 320c35.3 0 64-28.7 64-64V128a64 64 0 1 0-128 0V256c0 35.3 28.7 64 64 64zm56 32H104c-13.3 0-24 10.7-24 24s10.7 24 24 24h24v56c0 13.3 10.7 24 24 24s24-10.7 24-24V400h24c13.3 0 24-10.7 24-24s-10.7-24-24-24z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Overlay + форма -->
+  <div id="leadOverlay"></div>
+  <div id="leadPopup">
+    <h3>Оставьте заявку</h3>
+    <input id="leadName" placeholder="Ваше имя">
+    <input id="leadPhone" placeholder="+7 (___) ___-__-__">
+    <button onclick="submitLead()">Отправить</button>
+  </div>
+  <div id="leadThanks">✅ Спасибо, скоро свяжемся</div>
+
+  <script>
+    const OPENAI_PROXY_URL = "https://openai-gpt-proxy-mcnj.onrender.com/gpt";
+    const LEAD_URL = "https://openai-gpt-proxy-mcnj.onrender.com/lead";
+    const ELEVEN_URL = "https://elevenlabs-proxy-1o1s.onrender.com/stream";
+    
+    const chatBox = document.getElementById("chat");
+    const chatInput = document.getElementById("chatInput");
+    let messages = [];
+    let userId = localStorage.getItem("userId") || "user_" + Math.random().toString(36).substr(2,9);
+    localStorage.setItem("userId", userId);
+    let photoUploaded = false;
+
+    function appendMessage(text, fromUser=false){
+      const div = document.createElement("div");
+      div.className = "message " + (fromUser ? "user" : "bot");
+      div.textContent = text;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendMessage(){
+      const text = chatInput.value.trim();
+      if(!text) return;
+      appendMessage(text,true);
+      messages.push({role:"user", content:text});
+      chatInput.value="";
+
+      // ветка 3: сразу про цену без фото
+      if(messages.length === 1 && /сколько/i.test(text) && !photoUploaded){
+        appendMessage("Здравствуйте, надеюсь Вы не против аудиоформата... С радостью сориентирую по стоимости, но нужна фотография, чтобы понять масштаб работы. Кого бы вы хотели изобразить на портрете?", false);
+        return;
+      }
+
+      try {
+        const res = await fetch(OPENAI_PROXY_URL,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ messages, userId, mode:"portraits" })
+        });
+        const data = await res.json();
+        let reply = data.choices?.[0]?.message?.content || "Ошибка";
+        
+        if(/\[openLeadForm\]/i.test(reply) || data.triggerForm){
+          reply = reply.replace(/\[openLeadForm\]/gi,"").trim();
+          openLeadForm();
+        }
+
+        appendMessage(reply,false);
+        messages.push({role:"assistant", content:reply});
+
+        if(data.voice?.text){
+          playVoice(data.voice.text);
+        }
+
+      } catch(e){
+        appendMessage("Ошибка соединения",false);
+      }
+    }
+
+    function sendPhoto(){
+      photoUploaded = true;
+      appendMessage("📷 Фото отправлено", true);
+      messages.push({role:"user", content:"[photo]"});
+      appendMessage("Здравствуйте, надеюсь Вы не против аудиоформата... Для вашей фотографии отлично подойдет стиль художественная живопись. Сейчас пришлю примеры работ.", false);
+    }
+
+    async function playVoice(text){
+      try {
+        const ttsRes = await fetch(ELEVEN_URL,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ text })
+        });
+        const blob = await ttsRes.blob();
+        const audioUrl = URL.createObjectURL(blob);
+
+        const div = document.createElement("div");
+        div.className = "message bot";
+        div.innerHTML = `<audio controls src="${audioUrl}"></audio>`;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        new Audio(audioUrl).play();
+      } catch(err){ console.error("TTS error", err); }
+    }
+
+    function openLeadForm(){
+      document.getElementById("leadOverlay").style.display="block";
+      document.getElementById("leadPopup").style.display="block";
+    }
+    function closeForms(){
+      document.getElementById("leadOverlay").style.display="none";
+      document.getElementById("leadPopup").style.display="none";
+      document.getElementById("leadThanks").style.display="none";
+    }
+    document.getElementById("leadOverlay").onclick=closeForms;
+
+    async function submitLead(){
+      const name = document.getElementById("leadName").value.trim();
+      const phone = document.getElementById("leadPhone").value.trim();
+      if(!name || phone.length<6) return alert("Введите корректные данные");
+
+      document.getElementById("leadPopup").style.display="none";
+      document.getElementById("leadThanks").style.display="block";
+      setTimeout(closeForms,2500);
+
+      await fetch(LEAD_URL,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name, phone, userId, messages })
+      });
+    }
+
+    function startVoice(){
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = "ru-RU";
+      recognition.start();
+      recognition.onresult = (e)=>{
+        const text = e.results[0][0].transcript;
+        chatInput.value=text;
+        sendMessage();
+      };
+      recognition.onerror=()=>alert("Ошибка распознавания");
+    }
+
+   // авто-приветствие №2 (без фото) — голосом
+window.onload=()=>{
+  setTimeout(()=>{
+    playVoice("Здравствуйте, надеюсь Вы не против аудиоформата. Меня зовут Анна, я старший менеджер. Для расчета по стоимости нужна ваша фотография, чтобы подобрать стиль. Пришлите фото, пожалуйста.");
+  },800);
+}
+
